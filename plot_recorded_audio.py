@@ -54,14 +54,14 @@ def plot_freq_domain(audio):
 
 while True:
     try:
-        user_input = input("\npress 'r' to record, 'q' to quit: ").strip().lower()
+        user_input = input("\n press 'r' to record, 'q' to quit: ").strip().lower()
 
         if user_input == "r":
             audio = record_audio()
             plot_freq_domain(audio)
 
         elif user_input == "q":
-            print("Exiting program.")
+            print("quitting program")
             break
 
         else:
