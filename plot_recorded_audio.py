@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 fs = 44100 # sampling frequency in Hertz
 duration = 3 # samppling duration in seconds
 
+''' Record the audio using sound device '''
+
 def record_audio():
     print(f"starting {duration} second recording with a sampling frequency of {fs}")
     try:
@@ -18,17 +20,15 @@ def record_audio():
     finally:
         sd.stop()
 
+
 def plot_time_domain(audio):
-    if audio is None:
-        print("No audio data to plot.")
-        return
     time = np.linspace(0, duration, num=len(audio))
     #start, stop, number of steps. (length of audio array = number of sample)
     plt.figure(figsize=(10, 4))
     plt.plot(time, audio, label="Audio Signal", color='b')
     plt.xlabel("duration (seconds)")
     plt.ylabel("amplitude (normalized to be within -1 to 1 range)")
-    plt.title("Time Domain Plot of Recorded Audio")
+    plt.title("Time Domain Plot")
     plt.show()
     # this will output a plot that has an amplitude range of -1 to 1. this is the default
     # data type, dtype in sounddevice.rec() normalizes amplitude between these values. (not clipped)
@@ -36,24 +36,36 @@ def plot_time_domain(audio):
 
 
 def plot_freq_domain(audio):
-    print("freq domain plot")
-    return None
+    audio_fft = np.fft.fft(audio)
+    freqs = np.fft.fftfreq(len(audio), 1/fs)  # compute frequency bins (aka discrete frequencies) from audio_fft
+
+    # we only consider the positive half of the complex numbers. you get the same info.
+    positive_freqs = freqs[:len(freqs) // 2]
+    positive_magnitudes = np.abs(audio_fft[:len(audio_fft) // 2])
+
+    # Plot Frequency Spectrum
+    plt.figure(figsize=(10, 4))
+    plt.plot(positive_freqs, positive_magnitudes, color='b')
+    plt.xlabel("frequency (hertz)")
+    plt.ylabel("magnitude")
+    plt.title("Frequency Domain Plot")
+    plt.grid()
+    plt.show()
 
 while True:
     try:
-        user_input = input("\nPress 'r' to record, 'q' to quit: ").strip().lower()
+        user_input = input("\npress 'r' to record, 'q' to quit: ").strip().lower()
 
         if user_input == "r":
             audio = record_audio()
-            plot_time_domain(audio)
-            plot_freq_domain()
+            plot_freq_domain(audio)
 
         elif user_input == "q":
             print("Exiting program.")
             break
 
         else:
-            print("Invalid input. Press 'r' to record or 'q' to quit.")
+            print("press 'r' to record or 'q' to quit.")
     except KeyboardInterrupt:
         print("\nProgram interrupted by user.")
         break
