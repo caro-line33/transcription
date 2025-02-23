@@ -38,7 +38,6 @@ def plot_time_domain(audio):
 def plot_freq_domain(audio):
     audio_fft = np.fft.fft(audio)
     freqs = np.fft.fftfreq(len(audio), 1/fs)  # compute frequency bins (aka discrete frequencies) from audio_fft
-
     positive_freqs = freqs[:len(freqs) // 2]
     positive_magnitudes = np.abs(audio_fft[:len(audio_fft) // 2])
 
@@ -55,13 +54,9 @@ def plot_freq_domain(audio):
 def get_dominant_frequency(audio, fs):
     n = len(audio)
     fft_data = np.fft.rfft(audio)
-    
     fft_magnitude = np.abs(fft_data)
-    
     frequencies = np.fft.rfftfreq(n, d=1/fs)
-    
     dominant_index = np.argmax(fft_magnitude)
-    
     dominant_frequency = frequencies[dominant_index]
     return dominant_frequency
 
@@ -70,6 +65,8 @@ def closest_note(freq):
     print("hi")
     # write something here pls
 
+
+
 ''' user interface for recording & displaying values'''
 while True:
     try:
@@ -77,7 +74,7 @@ while True:
 
         if user_input == "r":
             audio = record_audio()
-            dominant_freq = get_dominant_frequency(audio, fs)
+            dominant_freq = round(get_dominant_frequency(audio, fs), 3)
             print(f"dominant freq: {dominant_freq} hz")
             plot_freq_domain(audio)
 
