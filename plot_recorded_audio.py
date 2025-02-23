@@ -12,7 +12,7 @@ def record_audio():
     try:
         audio = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype=np.float32)
         sd.wait() # wait for sound device to finish before continuing
-        print("alright im done.")
+        print("finished recording.")
         return audio.flatten() # convert to numpy array for easier mathematical processing
     except Exception as e:
         print(f"could not record. error: {e}")
@@ -20,7 +20,7 @@ def record_audio():
     finally:
         sd.stop()
 
-
+''' function for plotting recording in time domain '''
 def plot_time_domain(audio):
     time = np.linspace(0, duration, num=len(audio))
     #start, stop, number of steps. (length of audio array = number of sample)
@@ -34,16 +34,14 @@ def plot_time_domain(audio):
     # data type, dtype in sounddevice.rec() normalizes amplitude between these values. (not clipped)
 
 
-
+''' function for plotting recording in freq domain '''
 def plot_freq_domain(audio):
     audio_fft = np.fft.fft(audio)
     freqs = np.fft.fftfreq(len(audio), 1/fs)  # compute frequency bins (aka discrete frequencies) from audio_fft
 
-    # we only consider the positive half of the complex numbers. you get the same info.
     positive_freqs = freqs[:len(freqs) // 2]
     positive_magnitudes = np.abs(audio_fft[:len(audio_fft) // 2])
 
-    # Plot Frequency Spectrum
     plt.figure(figsize=(10, 4))
     plt.plot(positive_freqs, positive_magnitudes, color='b')
     plt.xlabel("frequency (hertz)")
@@ -52,12 +50,35 @@ def plot_freq_domain(audio):
     plt.grid()
     plt.show()
 
+
+''' function for choosing domaninant frequency '''
+def get_dominant_frequency(audio, fs):
+    n = len(audio)
+    fft_data = np.fft.rfft(audio)
+    
+    fft_magnitude = np.abs(fft_data)
+    
+    frequencies = np.fft.rfftfreq(n, d=1/fs)
+    
+    dominant_index = np.argmax(fft_magnitude)
+    
+    dominant_frequency = frequencies[dominant_index]
+    return dominant_frequency
+
+''' code for note detection based on dominant frequency goes here'''
+def closest_note(freq):
+    print("hi")
+    # write something here pls
+
+''' user interface for recording & displaying values'''
 while True:
     try:
         user_input = input("\n press 'r' to record, 'q' to quit: ").strip().lower()
 
         if user_input == "r":
             audio = record_audio()
+            dominant_freq = get_dominant_frequency(audio, fs)
+            print(f"dominant freq: {dominant_freq} hz")
             plot_freq_domain(audio)
 
         elif user_input == "q":
