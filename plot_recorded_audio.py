@@ -76,7 +76,7 @@ while True:
             audio = record_audio()
             dominant_freq = round(get_dominant_frequency(audio, fs), 3)
             print(f"dominant freq: {dominant_freq} hz")
-            plot_freq_domain(audio)
+            plot_time_domain(audio)
 
         elif user_input == "q":
             print("quitting program")
