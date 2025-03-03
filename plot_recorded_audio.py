@@ -87,3 +87,5 @@ while True:
     except KeyboardInterrupt:
         print("\nProgram interrupted by user.")
         break
+
+print("Program terminated")
