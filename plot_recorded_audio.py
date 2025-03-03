@@ -88,4 +88,3 @@ while True:
         print("\nProgram interrupted by user.")
         break
 
-print("Program terminated")
