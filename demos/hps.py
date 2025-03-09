@@ -33,10 +33,10 @@ magnitude_spectrum = np.abs(freq_spectrum)[:len(freq_spectrum)//2]  # Use just t
 
 # HPS Calculation
 hps_spectrum = magnitude_spectrum.copy()
-harmonics = 5
+harmonics = 5 # Scale the spectrum down 5 times for 5 harmonics
 for i in range(1, harmonics):
-    resampled_spectrum = np.interp(np.arange(len(hps_spectrum)), np.arange(0, len(hps_spectrum), i + 1), magnitude_spectrum[::(i + 1)])
-    hps_spectrum *= resampled_spectrum  # Multiply the current HPS spectrum with the resampled spectrum
+    scaled_spectrum = np.interp(np.arange(len(hps_spectrum)), np.arange(0, len(hps_spectrum), i + 1), magnitude_spectrum[::(i + 1)])
+    hps_spectrum *= scaled_spectrum  # Multiply the current HPS spectrum with the scaled spectrum
 
 # Find the peak frequency in the HPS spectrum
 peak_freq = np.argmax(hps_spectrum)  # Find index of peak magnitude
