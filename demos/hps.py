@@ -11,3 +11,21 @@
 
     After finding the fundamental frequency of the sample using Harmonic Product Spectrum, we can assign it
        to a note, demonstrated by note_id.py '''
+
+import sounddevice as sd
+import numpy as np
+import scipy.fftpack # scipy fft is faster than numpy fft
+
+fs = 44800 # sampling frequency
+duration = 2
+
+# sd.rec(frames, samplerate, channels, dtype, callback, blocking, device, channels, blocking)
+# only frames, samplerate, channels are required as arguments.
+
+print('starting recording!')
+audio_data = sd.rec(int(duration * fs), samplerate=fs, channels=1) # sd.rec returns a numpy array
+sd.wait # wait until the recording is done to start the next step
+
+
+
+print('done')
