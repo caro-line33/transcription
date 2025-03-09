@@ -65,6 +65,17 @@ def closest_note(freq):
     print("hi")
     # write something here pls
 
+concert_pitch = 440
+all_notes = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
+
+
+def find_closest_note(pitch):
+    i = int(np.round(np.log2(pitch/concert_pitch)*12))
+    closest_note = all_notes[i % 12] + str(4 + (i + 9) // 12)
+    closest_pitch = concert_pitch*(2**(i/12))
+    return closest_note, closest_pitch
+
+
 
 
 ''' user interface for recording & displaying values'''
@@ -76,7 +87,12 @@ while True:
             audio = record_audio()
             dominant_freq = round(get_dominant_frequency(audio, fs), 3)
             print(f"dominant freq: {dominant_freq} hz")
-            plot_time_domain(audio)
+
+            note, pitch = find_closest_note(dominant_freq)
+            print("The note at that pitch is " + str(note))
+            print("The pure pitch of that note is " + str(pitch))
+
+            plot_freq_domain(audio)
 
         elif user_input == "q":
             print("quitting program")
