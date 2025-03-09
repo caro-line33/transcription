@@ -17,14 +17,12 @@ threshold = 0.02 # power threshold to define what is a sound and what is silence
 duration = 0.1 # duration of audio chunk in seconds
 
 def callback(indata, frames, time, status):
-    
-    # status is an instance of sounddevice.CallbackFlags
-    # if there are any that means an error has occured
-    # this if statement prevents the code from continuing if errors are encountered
+    # this is the function that is called by sd.InputStream each time a new audio chunk is available
+    # status is an instance of sounddevice.CallbackFlags. if there are any that means an error has occured
+    # if statement below prevents the code from continuing if errors are encountered
     if status:
         print(status)
         return
-    
     
     # calculate total energy of the audio chunk by calculating the sum of squares
     # **2 on an array squares every value, np.sum adds up those squares
@@ -38,7 +36,6 @@ def callback(indata, frames, time, status):
         print("I can hear you")
     else:
         print("I cannot hear you")
-
 
 try:
     #try opening an audio stream using sd.InputStream
