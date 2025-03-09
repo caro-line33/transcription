@@ -1,6 +1,13 @@
 ''' in the file hps.py we record an audio clip and then use harmonic product spectrum to identify the 
 fundamental frequency in the recording. here we use hps to detect several notes at once. this can be used when
-chords and stuff are played.'''
+chords and stuff are played.
+
+this is called "polyphonic" note or pitch detection
+
+for hps there should be barely any peaks besides the fundamental frequency so i think if the magnitude of second
+highest peak is > 1/2 max magnitude then count it as a note? idk if 1/2 is the correct cutoff ratio though
+and then keep going if theres exists a second peak, and stop when theres no more viable peaks or if the count
+is greater than a certain threshold'''
 
 import sounddevice as sd
 import numpy as np
