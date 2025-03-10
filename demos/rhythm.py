@@ -6,3 +6,6 @@ or triple since multiple notes could happen at once. so whenver a new one is det
 which is (note, note_start, note_length) to the array.
 
 '''
+
+
+
