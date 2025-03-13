@@ -1,10 +1,3 @@
-'''
-Guitar tuner script based on the Harmonic Product Spectrum (HPS)
-
-MIT License
-Copyright (c) 2021 chciken
-'''
-
 import copy
 import os
 import numpy as np
