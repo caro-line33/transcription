@@ -50,7 +50,7 @@ def callback(indata, frames, time_info, status):
         print(status)
         return
 
-    if np.any(indata):
+    if np.any(indata): # only proceed if at least one value is nonzero
         new_samples = indata[:, 0]
         num_new = len(new_samples)
         
