@@ -13,6 +13,7 @@ def callback(indata, frames, time_info, status):
     if status:
         print(status)
         return
+    
     full_frequency = scipy.fftpack.fft(indata.flatten())
     frequency = full_frequency[:len(full_frequency)//2]
     freq_res = sample_freq/window_size
