@@ -1,51 +1,36 @@
-''' This file demonstrates the Harmonic Product Spectrum, a way to detect the fundamental frequency.
-    The Harmonic Product Spectrum (HPS) is a way to find the pitch of a sound by looking for its 
-    fundamental frequency — the main "note" you hear. 
-    It works by:
-
-    1. Calculating the frequency spectrum of the sound (using a Fourier Transform).
-    2. Making smaller, downscaled versions of the spectrum — one for each harmonic (there's infinite harmonics)
-    we can just calculate for 5 of them to make this computationally lighter.
-    3. Multiplying these spectra together — so the harmonics overlap and boost the fundamental frequency's peak.
-    4. The highest peak after multiplying shows the pitch since true harmonics will align at the fundamental 
-       frequency, cutting through noise and false peaks.
-
-    After finding the fundamental frequency of the sample using Harmonic Product Spectrum, we can assign it
-       to a note, demonstrated by note_id.py '''
-
-import sounddevice as sd
+import os
 import numpy as np
-import scipy.fftpack  # scipy fft is faster than numpy fft
+import scipy.fftpack
+import sounddevice as sd
+import time
+from collections import deque
 
-fs = 44800  # sampling frequency
-duration = 2  # seconds
+sample_freq = 48000 # number of samples taken per second
+window_size = 48000
 
-# sd.rec(frames, samplerate, channels, dtype, callback, blocking, device, channels, blocking)
-# only frames, samplerate, channels are required as arguments.
 
-print('starting recording!')
-audio_data = sd.rec(int(duration * fs), samplerate=fs, channels=1)  # sd.rec returns a numpy array
-sd.wait()  # wait until the recording is done to start the next step
+def callback(indata, frames, time_info, status):
+    if status:
+        print(status)
+        return
+    full_frequency = scipy.fftpack.fft(indata.flatten())
+    frequency = full_frequency[:len(full_frequency)//2]
+    magnitude = np.abs(frequency)
+    original_indices = np.arange(len(magnitude))  
+    more_indices = np.arange(0, len(magnitude), 1/5)
+    magnitude_interp = np.interp(more_indices, original_indices, magnitude)
 
-# Perform FFT to get frequency spectrum
-freq_spectrum = scipy.fftpack.fft(audio_data.flatten())  # Flatten to convert to 1D array
-magnitude_spectrum = np.abs(freq_spectrum)[:len(freq_spectrum)//2]  # Use just the first half.
 
-# HPS Calculation
-hps_spectrum = magnitude_spectrum.copy()
-harmonics = 5 # Scale the spectrum down 5 times for 5 harmonics
-for i in range(1, harmonics):
-    scaled_spectrum = np.interp(np.arange(len(hps_spectrum)), np.arange(0, len(hps_spectrum), i + 1), magnitude_spectrum[::(i + 1)])
-    hps_spectrum *= scaled_spectrum  # Multiply the current HPS spectrum with the scaled spectrum
+    max_mag = np.argmax(magnitude)
+    bin_range = sample_freq/window_size
+    dominant_frequency = max_mag*bin_range+(bin_range/2)
 
-# Find the peak frequency in the HPS spectrum
-peak_freq = np.argmax(hps_spectrum)  # Find index of peak magnitude
-peak_frequency = peak_freq * (fs/len(audio_data))  # Convert index to frequency
-
-print(f"fundamental frequency: {peak_frequency} Hz")
-print('done')
-
-# math review
-   # complex numbers tell us the magnitude and phase shift
-   # we can find the corresponding frequency by the complex number's index in the array
-   # hps works by scaling down the sample repeatedly since harmonics are integer multiples of fundamental freq
+    
+    os.system('cls' if os.name == 'nt' else 'clear')
+    
+try:
+    with sd.InputStream(channels=1, callback=callback, samplerate=sample_freq, blocksize=window_size):
+        while True:
+            time.sleep(0.1)
+except Exception as e:
+    print(e)
