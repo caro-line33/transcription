@@ -142,7 +142,6 @@ def callback(indata, frames, time_info, status):
         print("no input")
 
 try:
-    print("Starting HPS guitar tuner...")
     with sd.InputStream(channels=1, callback=callback,
                         blocksize=WINDOW_STEP, samplerate=SAMPLE_FREQ):
         while True:
