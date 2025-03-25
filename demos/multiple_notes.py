@@ -5,19 +5,19 @@ import scipy.fftpack
 import sounddevice as sd
 import time
 
-# General settings that can be changed by the user
+# General settings
 SAMPLE_FREQ = 48000      # sample frequency in Hz
 WINDOW_SIZE = 48000      # window size of the DFT in samples
 WINDOW_STEP = 12000      # step size of window
 NUM_HPS = 5              # max number of harmonic product spectrums
-POWER_THRESH = 1e-6      # tuning is activated if the signal power exceeds this threshold
-CONCERT_PITCH = 440      # defining A4 (440 Hz)
+POWER_THRESH = 1e-6      # processing activated if signal power exceeds this
+CONCERT_PITCH = 440      # reference pitch A4
 WHITE_NOISE_THRESH = 0.2 # multiplier for noise suppression in each octave band
-HPS_PEAK_THRESH = 1e-5   # if the HPS peak amplitude is below this threshold, consider it noise
+HPS_PEAK_THRESH = 1e-9   # minimum HPS peak amplitude to consider as a valid note
 
-WINDOW_T_LEN = WINDOW_SIZE / SAMPLE_FREQ  # length of the window in seconds
+WINDOW_T_LEN = WINDOW_SIZE / SAMPLE_FREQ  # window length in seconds
 SAMPLE_T_LENGTH = 1 / SAMPLE_FREQ           # time between samples
-DELTA_FREQ = SAMPLE_FREQ / WINDOW_SIZE      # frequency resolution of the FFT
+DELTA_FREQ = SAMPLE_FREQ / WINDOW_SIZE      # frequency resolution of FFT
 OCTAVE_BANDS = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600]
 
 ALL_NOTES = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
@@ -30,32 +30,45 @@ def find_closest_note(pitch):
       closest_note (str): e.g., A, G#, etc.
       closest_pitch (float): the frequency of the closest note.
     """
-    i = int(np.round(np.log2(pitch/CONCERT_PITCH)*12))
+    i = int(np.round(np.log2(pitch / CONCERT_PITCH) * 12))
     closest_note = ALL_NOTES[i % 12] + str(4 + (i + 9) // 12)
-    closest_pitch = CONCERT_PITCH * 2**(i/12)
+    closest_pitch = CONCERT_PITCH * 2**(i / 12)
     return closest_note, closest_pitch
 
 HANN_WINDOW = np.hanning(WINDOW_SIZE)
 
+def compute_hps(mag_spec_ipol):
+    """
+    Compute the Harmonic Product Spectrum (HPS) from the
+    interpolated magnitude spectrum.
+    """
+    hps_spec = copy.deepcopy(mag_spec_ipol)
+    for i in range(1, NUM_HPS):
+        # Downsample by factor (i+1)
+        downsampled = mag_spec_ipol[::(i+1)]
+        length = min(len(hps_spec), len(downsampled))
+        hps_spec = hps_spec[:length] * downsampled[:length]
+    return hps_spec
+
 def callback(indata, frames, time_info, status):
     """
     Callback function of the InputStream.
-    Processes the incoming audio, applies FFT and HPS,
-    and uses both power and HPS peak thresholds to avoid
-    detecting a note when there is only noise.
+    Processes incoming audio, applies FFT, noise filtering,
+    and then iteratively computes the HPS to detect multiple
+    notes (polyphonic detection).
     """
-    # Define static variables on the first call.
+    # Define static variables on first call.
     if not hasattr(callback, "window_samples"):
         callback.window_samples = np.zeros(WINDOW_SIZE)
     if not hasattr(callback, "noteBuffer"):
-        callback.noteBuffer = ["1", "2"]
+        callback.noteBuffer = []
 
     if status:
         print(status)
         return
 
     if any(indata):
-        # Update the sliding window buffer.
+        # Update sliding window buffer.
         callback.window_samples = np.concatenate((callback.window_samples, indata[:, 0]))
         callback.window_samples = callback.window_samples[len(indata[:, 0]):]
 
@@ -66,16 +79,16 @@ def callback(indata, frames, time_info, status):
             print("Closest note: ...")
             return
 
-        # Apply a Hann window to reduce spectral leakage.
+        # Apply a Hann window.
         hann_samples = callback.window_samples * HANN_WINDOW
         fft_result = scipy.fftpack.fft(hann_samples)
         magnitude_spec = np.abs(fft_result[:len(fft_result)//2])
 
         # Suppress mains hum: zero out frequencies below 62 Hz.
-        for i in range(int(62/DELTA_FREQ)):
+        for i in range(int(62 / DELTA_FREQ)):
             magnitude_spec[i] = 0
 
-        # Process each octave band to suppress noise.
+        # Process each octave band for noise suppression.
         for j in range(len(OCTAVE_BANDS)-1):
             ind_start = int(OCTAVE_BANDS[j] / DELTA_FREQ)
             ind_end = int(OCTAVE_BANDS[j+1] / DELTA_FREQ)
@@ -93,49 +106,57 @@ def callback(indata, frames, time_info, status):
         x_orig = np.arange(len(magnitude_spec))
         x_interp = np.arange(0, len(magnitude_spec), 1/NUM_HPS)
         mag_spec_ipol = np.interp(x_interp, x_orig, magnitude_spec)
-        mag_spec_ipol = mag_spec_ipol / np.linalg.norm(mag_spec_ipol)  # Normalize
-
-        # Calculate the Harmonic Product Spectrum (HPS).
-        hps_spec = copy.deepcopy(mag_spec_ipol)
-        for i in range(NUM_HPS):
-            tmp_hps_spec = np.multiply(
-                hps_spec[:int(np.ceil(len(mag_spec_ipol)/(i+1)))],
-                mag_spec_ipol[::(i+1)]
-            )
-            if not any(tmp_hps_spec):
-                break
-            hps_spec = tmp_hps_spec
-
-        # Check if the HPS peak amplitude is significant.
-        max_ind = np.argmax(hps_spec)
-        max_amp = hps_spec[max_ind]
-        if max_amp < HPS_PEAK_THRESH:
+        norm_val = np.linalg.norm(mag_spec_ipol)
+        if norm_val:
+            mag_spec_ipol = mag_spec_ipol / norm_val
+        else:
             os.system('cls' if os.name=='nt' else 'clear')
             print("Closest note: ...")
             return
 
-        max_freq = max_ind * (SAMPLE_FREQ / WINDOW_SIZE) / NUM_HPS
-        closest_note, closest_pitch = find_closest_note(max_freq)
-        max_freq = round(max_freq, 1)
-        closest_pitch = round(closest_pitch, 1)
+        # Compute HPS on the original spectrum to determine the main peak.
+        full_hps = compute_hps(mag_spec_ipol)
+        orig_peak_amp = np.max(full_hps)
+        if orig_peak_amp < HPS_PEAK_THRESH:
+            os.system('cls' if os.name=='nt' else 'clear')
+            print("Closest note: ...")
+            return
 
-        # Update the note ring buffer for smoothing.
-        callback.noteBuffer.insert(0, closest_note)
-        callback.noteBuffer.pop()
+        # Use a constant threshold for additional peaks (50% of main peak).
+        amplitude_threshold = 0.75 * orig_peak_amp
+
+        detected_notes = []
+        # Create a modifiable copy for iterative peak detection.
+        modified_mag_spec = mag_spec_ipol.copy()
+
+        # Iteratively compute HPS and detect peaks.
+        while True:
+            hps_spec = compute_hps(modified_mag_spec)
+            peak_index = np.argmax(hps_spec)
+            peak_amp = hps_spec[peak_index]
+            if peak_amp < amplitude_threshold:
+                break
+            # Compute frequency from the interpolated index.
+            detected_freq = peak_index * (SAMPLE_FREQ / WINDOW_SIZE) / NUM_HPS
+            note, note_pitch = find_closest_note(detected_freq)
+            detected_notes.append((note, round(detected_freq,1), round(note_pitch,1)))
+            # Zero out only the specific frequency bin where the peak was found.
+            modified_mag_spec[peak_index] = 0
 
         os.system('cls' if os.name=='nt' else 'clear')
-        if callback.noteBuffer.count(callback.noteBuffer[0]) == len(callback.noteBuffer):
-            print(f"Closest note: {closest_note} {max_freq}/{closest_pitch}")
+        if detected_notes:
+            note_list = ", ".join([f"{n} ({f}Hz/{p}Hz)" for n, f, p in detected_notes])
+            print("Detected notes: " + note_list)
         else:
             print("Closest note: ...")
     else:
-        print('no input')
+        print("no input")
 
 try:
-    print("Starting HPS guitar tuner...")
-    with sd.InputStream(channels=1, callback=callback, blocksize=WINDOW_STEP, samplerate=SAMPLE_FREQ):
+    print("Starting polyphonic HPS tuner...")
+    with sd.InputStream(channels=1, callback=callback,
+                        blocksize=WINDOW_STEP, samplerate=SAMPLE_FREQ):
         while True:
             time.sleep(0.5)
 except Exception as exc:
     print(str(exc))
-
