@@ -4,7 +4,6 @@ import time
 import os
 from scipy.optimize import nnls
 import scipy.signal as signal
-import rtmidi
 
 # Constants
 SAMPLE_RATE = 48000
@@ -13,58 +12,6 @@ FREQS = np.fft.rfftfreq(FFT_SIZE, 1 / SAMPLE_RATE)
 RECORD_SECONDS = 3.0
 NUM_NOTES = 88
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-# MIDI setup
-midi_out = rtmidi.MidiOut()
-virtual_port_name = "loopMIDI Port 1"
-
-def setup_midi():
-    """Open an existing LoopMIDI port rather than trying to create one."""
-    port_names = midi_out.get_ports()
-    print("Available MIDI ports:", port_names)
-    if not port_names:
-        print("No MIDI ports found. Make sure LoopMIDI is running and you’ve added at least one port.")
-        return False
-
-    # try to find the port by name
-    try:
-        port_index = next(i for i, name in enumerate(port_names)
-                          if virtual_port_name in name)
-    except StopIteration:
-        # fallback: just open the first port
-        port_index = 0
-        print(f"Couldn’t find a port named '{virtual_port_name}', opening '{port_names[0]}' instead.")
-
-    try:
-        midi_out.open_port(port_index)
-        print(f"Connected to MIDI port: {port_names[port_index]}")
-        return True
-    except Exception as e:
-        print(f"Failed to open MIDI port {port_names[port_index]}: {e}")
-        return False
-
-
-def send_midi_note(midi_note, velocity=100, duration=None):
-    """
-    Send MIDI note on message, and optionally a note off after specified duration
-    
-    Parameters:
-    - midi_note: MIDI note number (0-127)
-    - velocity: Note velocity (0-127)
-    - duration: If provided, how long to hold the note before sending note off (in seconds)
-    """
-    # Note on message: [status_byte, note, velocity]
-    # Status byte for note on is 0x90 + channel number (0-15)
-    note_on = [0x90, midi_note, velocity]
-    midi_out.send_message(note_on)
-    
-    # If duration is provided, send note off after waiting
-    if duration is not None:
-        time.sleep(duration)
-        # Note off: [status_byte, note, velocity]
-        # Status byte for note off is 0x80 + channel number
-        note_off = [0x80, midi_note, 0]
-        midi_out.send_message(note_off)
 
 def note_to_hz(midi_note):
     """Convert MIDI note number to frequency in Hz."""
@@ -270,104 +217,37 @@ def main():
     # Create bin edges
     edges = make_custom_bins(FREQS)
     
-    print("Enhanced Piano Note Detection with MIDI Output")
-    print("============================================")
-    
-    # Setup MIDI
-    if not setup_midi():
-        print("Failed to set up MIDI. Exiting.")
-        return
-    
-    print(f"\nVirtual MIDI port '{virtual_port_name}' is ready!")
-    print("You can now connect to this port from MuseScore or other MIDI software.")
+    print("Enhanced Piano Note Detection")
+    print("============================")
     
     # Main loop
-    try:
-        while True:
-            print("\nOptions:")
-            print("1. Record and analyze with enhanced detection")
-            print("2. Record and analyze with MIDI output")
-            print("3. Test MIDI connection with C major chord")
-            print("4. Exit")
-            choice = input("Choice: ")
+    while True:
+        print("\nOptions:")
+        print("1. Record and analyze with enhanced detection")
+        print("2. Exit")
+        choice = input("Choice: ")
+        
+        if choice == "2":
+            break
             
-            if choice == "4":
-                break
+        if choice == "1":
+            try:
+                audio = record_audio()
                 
-            if choice == "1":
-                try:
-                    audio = record_audio()
-                    
-                    start_time = time.time()
-                    detected_notes = enhanced_note_detection(audio, dictionary, edges)
-                    elapsed = time.time() - start_time
-                    
-                    print(f"\nDetected {len(detected_notes)} notes in {elapsed:.3f} seconds:")
-                    
-                    for i, (note_name, midi_note, freq, confidence) in enumerate(detected_notes):
-                        print(f"{i+1}. {note_name} (MIDI: {midi_note}, {freq:.1f} Hz) - Confidence: {confidence:.3f}")
-                except Exception as e:
-                    print(f"Error during analysis: {e}")
-                    import traceback
-                    traceback.print_exc()
-            
-            elif choice == "2":
-                try:
-                    audio = record_audio()
-                    
-                    start_time = time.time()
-                    detected_notes = enhanced_note_detection(audio, dictionary, edges)
-                    elapsed = time.time() - start_time
-                    
-                    print(f"\nDetected {len(detected_notes)} notes in {elapsed:.3f} seconds:")
-                    
-                    # Play the detected notes via MIDI
-                    print("\nSending detected notes to MIDI output...")
-                    
-                    # First, calculate velocity based on confidence
-                    for i, (note_name, midi_note, freq, confidence) in enumerate(detected_notes):
-                        # Scale confidence to MIDI velocity (0-127)
-                        velocity = int(confidence * 100) + 27  # minimum velocity of 27, max of 127
-                        velocity = min(127, max(1, velocity))  # ensure in valid range
-                        
-                        print(f"  → {note_name} (MIDI: {midi_note}) - Velocity: {velocity}")
-                        send_midi_note(midi_note, velocity)
-                    
-                    # Hold notes for a moment
-                    time.sleep(1.0)
-                    
-                    # Send note-off for all notes
-                    for _, midi_note, _, _ in detected_notes:
-                        midi_out.send_message([0x80, midi_note, 0])
-                        
-                except Exception as e:
-                    print(f"Error during analysis or MIDI output: {e}")
-                    import traceback
-                    traceback.print_exc()
-            
-            elif choice == "3":
-                print("Testing MIDI connection with C major chord...")
-                # Play C major chord (C4, E4, G4)
-                send_midi_note(60, 100)  # C4
-                send_midi_note(64, 100)  # E4
-                send_midi_note(67, 100)  # G4
+                start_time = time.time()
+                detected_notes = enhanced_note_detection(audio, dictionary, edges)
+                elapsed = time.time() - start_time
                 
-                # Hold for 1 second
-                time.sleep(1.0)
+                print(f"\nDetected {len(detected_notes)} notes in {elapsed:.3f} seconds:")
                 
-                # Turn off notes
-                midi_out.send_message([0x80, 60, 0])  # C4 off
-                midi_out.send_message([0x80, 64, 0])  # E4 off
-                midi_out.send_message([0x80, 67, 0])  # G4 off
-                
-                print("Test complete. Did you hear the chord in MuseScore?")
-            
-            print()
-    
-    finally:
-        # Clean up MIDI port
-        print("\nClosing MIDI port...")
-        midi_out.close_port()
+                for i, (note_name, midi_note, freq, confidence) in enumerate(detected_notes):
+                    print(f"{i+1}. {note_name} (MIDI: {midi_note}, {freq:.1f} Hz) - Confidence: {confidence:.3f}")
+            except Exception as e:
+                print(f"Error during analysis: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        print()
 
 if __name__ == "__main__":
     main()

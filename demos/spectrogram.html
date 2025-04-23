@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Live Audio Visualizer</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: sans-serif;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 33vh;
+    }
+    h1 {
+      text-align: center;
+      margin: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Live Audio Visualizer</h1>
+  <canvas id="waveform"></canvas>
+  <canvas id="spectrum"></canvas>
+  <canvas id="cqt"></canvas>
+
+  <script>
+    const canvas1 = document.getElementById('waveform');
+    const canvas2 = document.getElementById('spectrum');
+    const canvas3 = document.getElementById('cqt');
+    const ctx1 = canvas1.getContext('2d');
+    const ctx2 = canvas2.getContext('2d');
+    const ctx3 = canvas3.getContext('2d');
+
+    canvas1.width = canvas2.width = canvas3.width = window.innerWidth;
+    canvas1.height = canvas2.height = canvas3.height = window.innerHeight / 3;
+
+    let audioCtx, analyser, timeData, freqData, bufferLength;
+
+    async function initAudio() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+
+      analyser.fftSize = 2048;
+      bufferLength = analyser.frequencyBinCount;
+      timeData = new Uint8Array(analyser.fftSize);
+      freqData = new Uint8Array(bufferLength);
+
+      source.connect(analyser);
+      draw();
+    }
+
+    function draw() {
+      requestAnimationFrame(draw);
+
+      analyser.getByteTimeDomainData(timeData);
+      analyser.getByteFrequencyData(freqData);
+
+      // Waveform
+      ctx1.fillStyle = '#111';
+      ctx1.fillRect(0, 0, canvas1.width, canvas1.height);
+      ctx1.lineWidth = 2;
+      ctx1.strokeStyle = '#00ffcc';
+      ctx1.beginPath();
+      const sliceWidth = canvas1.width / timeData.length;
+      let x = 0;
+      for (let i = 0; i < timeData.length; i++) {
+        const v = timeData[i] / 128.0;
+        const y = v * canvas1.height / 2;
+        if (i === 0) ctx1.moveTo(x, y);
+        else ctx1.lineTo(x, y);
+        x += sliceWidth;
+      }
+      ctx1.stroke();
+
+      // Linear Frequency Spectrum (FFT)
+      ctx2.fillStyle = '#111';
+      ctx2.fillRect(0, 0, canvas2.width, canvas2.height);
+      const barWidth = (canvas2.width / bufferLength) * 2.5;
+      let barX = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const barHeight = freqData[i] * 1.2;
+        ctx2.fillStyle = `hsl(${i / bufferLength * 360}, 100%, 50%)`;
+        ctx2.fillRect(barX, canvas2.height - barHeight, barWidth, barHeight);
+        barX += barWidth + 1;
+      }
+
+      // Log Frequency Spectrum (approx. CQT view)
+      ctx3.fillStyle = '#111';
+      ctx3.fillRect(0, 0, canvas3.width, canvas3.height);
+      const logBins = 100; // fixed number of log-scale bins
+      let prevFreqIndex = 0;
+      for (let i = 0; i < logBins; i++) {
+        const logIndex = Math.floor(Math.pow(bufferLength, (i / logBins)));
+        let avg = 0;
+        for (let j = prevFreqIndex; j < logIndex; j++) {
+          avg += freqData[j] || 0;
+        }
+        avg /= (logIndex - prevFreqIndex || 1);
+        const height = avg * 1.5;
+        const binWidth = canvas3.width / logBins;
+        ctx3.fillStyle = `hsl(${i / logBins * 360}, 100%, 50%)`;
+        ctx3.fillRect(i * binWidth, canvas3.height - height, binWidth, height);
+        prevFreqIndex = logIndex;
+      }
+    }
+
+    initAudio();
+  </script>
+</body>
+</html>
