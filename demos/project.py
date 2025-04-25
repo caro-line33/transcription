@@ -9,7 +9,7 @@ import mido
 dictionary = np.load("notes_matrix.npy")
 dict_norms = np.linalg.norm(dictionary, axis=1, keepdims=True)   # shape (N_notes,1)
 dictionary_unit = dictionary / (dict_norms + 1e-12) 
-midi_out = mido.open_output('loopMIDI Port 1')
+PORT_NAME = 'loopMIDI Port 1'
 
 sample_freq = 8400
 fft_length = 8400
@@ -64,6 +64,8 @@ def callback(indata, frames, time_info, status):
         callback._ema = 0.0
         callback._prev_ema   = 0.0
         callback._dec_count  = 0.0
+        callback._previous_note_indices = []
+        callback._current_note_indices = []
     
     # Get ring buffer and add current block to it
     buf = callback._buffer
@@ -87,6 +89,8 @@ def callback(indata, frames, time_info, status):
     if energy < threshold:
         print("no sound detected...")
         score = 0
+        for n in callback._previous_note_indices:
+            callback._previous_note_indices = []
     else:
         score, spectrum = tonality_score(buf)
     callback._ema = 0.88 * callback._ema + 0.12 * score
@@ -110,7 +114,6 @@ def callback(indata, frames, time_info, status):
 
         # pick top 5
         candidates = top_n_idx(cos_sims, n=5)
-
         candidates = top_n_idx(cos_sims, n=5)
 
         # build A so that each candidate dictionary‐row is a COLUMN
@@ -122,9 +125,18 @@ def callback(indata, frames, time_info, status):
         x, residual = nnls(A, b) # coefficients
         print("NNLS coefficients:", x)
 
-        avg_coef = x.mean()
+        avg_coef = x.mean()*0.9
         candidates = [c for i, c in enumerate(candidates) if x[i] >= avg_coef]
         print("Top matches (cosine):", [(c, note_names[c]) for c in candidates])
+
+        callback._current_note_indices = candidates
+
+        for note in candidates:
+            outport.send(mido.Message('note_on', note=idx_to_midi(note), velocity=48))
+            outport.send(mido.Message('note_off', note=idx_to_midi(note), velocity=48))
+
+        callback._previous_note_indices = callback._current_note_indices
+
                 
 
     print(f"delta ema: {delta:.2f}")
@@ -134,11 +146,12 @@ def callback(indata, frames, time_info, status):
         
 
 if __name__ == "__main__":
-    try:
-        with sd.InputStream(channels=1, callback=callback, samplerate=sample_freq, blocksize=blocksize):
-            while True:
-                time.sleep(0.1)
-    except KeyboardInterrupt:
-        print("\nStopped")
-    except Exception as e:
-        print(str(e))
+    with mido.open_output(PORT_NAME) as outport:
+        try:
+            with sd.InputStream(channels=1, callback=callback, samplerate=sample_freq, blocksize=blocksize):
+                while True:
+                    time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("\nStopped")
+        except Exception as e:
+            print(str(e))

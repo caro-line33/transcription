@@ -21,7 +21,6 @@ def tonality_score(input_signal):
     return score, spectrum
 
 
-
 def callback(indata, frames, time_info, status):
     if status:
         print(status)
