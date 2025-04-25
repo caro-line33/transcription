@@ -115,7 +115,7 @@ def callback(indata, frames, time_info, status):
         sig_norm = signal / (np.linalg.norm(signal) + 1e-12)
         cos_sims = dictionary_unit @ sig_norm
 
-        # pick top note (just use n=1 for simplicity)
+        # pick top note by index
         candidates = top_n_idx(cos_sims, n=5)
         top_note = candidates[0]  # Just get the best match
         

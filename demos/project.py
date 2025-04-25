@@ -110,14 +110,22 @@ def callback(indata, frames, time_info, status):
 
         # pick top 5
         candidates = top_n_idx(cos_sims, n=5)
-        print("Top matches (cosine):", [(c, note_names[c]) for c in candidates])
 
-        # NNLS solve using top 5- this part is generating an error due to dimension mismatch!
-        # b = signal
-        # A = np.vstack([dictionary[index] for index in candidates])
-        # x, residual = nnls(A, b)
-        # print("NNLS coefficients:", x)
-            
+        candidates = top_n_idx(cos_sims, n=5)
+
+        # build A so that each candidate dictionary‐row is a COLUMN
+
+        A = dictionary[candidates].T 
+        b = signal
+
+        from scipy.optimize import nnls
+        x, residual = nnls(A, b) # coefficients
+        print("NNLS coefficients:", x)
+
+        avg_coef = x.mean()
+        candidates = [c for i, c in enumerate(candidates) if x[i] >= avg_coef]
+        print("Top matches (cosine):", [(c, note_names[c]) for c in candidates])
+                
 
     print(f"delta ema: {delta:.2f}")
     print(f"dec count: {callback._dec_count:.2f}")
