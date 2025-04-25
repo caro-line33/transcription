@@ -9,24 +9,24 @@ from collections import deque
 import mido  # For MIDI output
 
 # MIDI output settings
-MIDI_PORT_NAME = "loopMIDI Port 1"  # Default port name
+MIDI_PORT_NAME = "loopMIDI Port 1"
 MIDI_VELOCITY = 80  # Default velocity for note-on messages
 
 # Constants
-SAMPLE_RATE = 48000
-FFT_SIZE = 48000
-BUFFER_SECONDS = 1.5  # Reduced buffer size for faster response
-HOP_SECONDS = 0.25    # Shorter hop for more frequent updates
+SAMPLE_RATE = 48000   # chosen to give a frequency spectrum range up to 24kHz 
+FFT_SIZE = 48000      # chosen to given initial bin width of 1Hz
+BUFFER_SECONDS = 1.5  # Seconds of data analyzed each time step
+HOP_SECONDS = 0.25    # How often data is analyzed
 BUFFER_SIZE = int(SAMPLE_RATE * BUFFER_SECONDS)
 HOP_SIZE = int(SAMPLE_RATE * HOP_SECONDS)
 NUM_NOTES = 88
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
-# Silence detection thresholds
+# Silence detection thresholds - chosen arbitrarily based on what worked best
 TIME_DOMAIN_SILENCE_THRESHOLD = 1e-3
 FREQ_DOMAIN_SILENCE_THRESHOLD = 1e-3
 
-# Note detection parameters
+# Note detection parameters for note candidate selection
 HARMONIC_TOLERANCE = 0.04
 MIN_PEAK_HEIGHT = 0.05
 PEAK_DISTANCE_HZ = 10
@@ -39,15 +39,16 @@ audio_buffer = deque(maxlen=BUFFER_SIZE)
 buffer_lock = threading.Lock()
 active_notes = []
 is_running = False
-note_history = []  # Track note changes over time
-history_length = 4  # Number of frames to keep in history
+note_history = []             # Track note changes over time to reduce spurious outputs
+history_length = 4            # Number of frames to keep in history
 note_stability_counters = {}  # Track consecutive detections for each note
-was_silent_before = True  # Track transitions from silence to sound
+was_silent_before = True      # Track transitions from silence to sound
 
 def note_to_hz(midi_note):
     """Convert MIDI note number to frequency in Hz."""
     return 440.0 * (2.0 ** ((midi_note - 69) / 12.0))
 
+# create varying bin width ranges for vector compression
 def make_custom_bins(freqs):
     bin_plan = [(100, 1), (400, 2), (900, 3), (1600, 4), (2500, 5), (3600, 6)]
     edges = [freqs[0]]
@@ -65,6 +66,7 @@ def make_custom_bins(freqs):
     
     return np.array(edges)
 
+# vector compression to reduce computational load
 def compress_fft_to_custom_bins(spectrum, freqs, edges, threshold=1e-5):
     compressed = []
     spectrum = np.copy(spectrum)
@@ -77,12 +79,14 @@ def compress_fft_to_custom_bins(spectrum, freqs, edges, threshold=1e-5):
     
     return np.array(compressed)
 
+# normalize the signal vector
 def normalize_vector(vector):
     norm = np.linalg.norm(vector)
     if norm > 0:
         return vector / norm
     return vector
 
+# time domain pre-processing
 def is_silent(audio_data, spectrum=None):
     """Check if audio is silent using both time and frequency domain checks."""
     # Time domain check
@@ -105,8 +109,8 @@ def is_silent(audio_data, spectrum=None):
     
     return False, "Audio contains signal"
 
+# peak detection in frequency spectrum
 def find_spectral_peaks(spectrum, freqs, min_height=None, distance=None):
-    """Find significant peaks in the spectrum using scipy's peak finder"""
     if min_height is None:
         min_height = MIN_PEAK_HEIGHT * np.max(spectrum)
     
@@ -131,8 +135,8 @@ def find_spectral_peaks(spectrum, freqs, min_height=None, distance=None):
     
     return peaks
 
+# estimate if a peak is a harmonic or a fundamental by comparing heights
 def is_harmonic_of_stronger_fundamental(freq, amplitude, all_peaks, harmonic_tolerance=0.02):
-    """Check if a frequency is likely a harmonic of a stronger fundamental."""
     # Only consider peaks with higher amplitude than this one
     stronger_peaks = [p for p in all_peaks if p[1] > amplitude]
     
@@ -145,6 +149,7 @@ def is_harmonic_of_stronger_fundamental(freq, amplitude, all_peaks, harmonic_tol
     
     return False
 
+# be less sensitive at transitions to silence 
 def handle_silence_to_sound_transition(spectrum, freqs):
     """
     Special handling for transitions from silence to sound.
@@ -179,11 +184,9 @@ def handle_silence_to_sound_transition(spectrum, freqs):
     
     return transition_notes
 
+# candidate selection
 def find_feasible_notes_advanced(spectrum, freqs, is_transition=False):
-    """
-    Find feasible notes based on spectral peaks and harmonic relationships,
-    with improved harmonic disambiguation.
-    """
+
     # Special handling for silence to sound transitions
     if is_transition:
         return handle_silence_to_sound_transition(spectrum, freqs)
@@ -231,17 +234,15 @@ def find_feasible_notes_advanced(spectrum, freqs, is_transition=False):
             if f1_min <= freq <= f1_max and (f1_peak is None or amp > f1_peak[1]):
                 f1_peak = (freq, amp, idx)
         
-        # A note is feasible if both fundamental and 2nd harmonic have peaks
+        # A note is feasible if both fundamental and 2nd harmonic have significant presence
         if f0_peak is not None and f1_peak is not None:
             feasible_notes.append(note_idx)
     
     return feasible_notes
 
+# track note stability to reduce false positives 
 def track_note_stability(detected_notes):
-    """
-    Track note stability across frames.
-    Returns a set of stable notes (detected for multiple consecutive frames).
-    """
+
     global note_stability_counters
     
     # Current detected MIDI notes
@@ -267,8 +268,9 @@ def track_note_stability(detected_notes):
     
     return stable_notes
 
+
 def enhanced_note_detection(audio_data, dictionary, edges, is_transition=False):
-    """Enhanced note detection with improved harmonic disambiguation."""
+
     # Check for silence in time domain first (quick check)
     silent, message = is_silent(audio_data)
     if silent:
@@ -278,7 +280,7 @@ def enhanced_note_detection(audio_data, dictionary, edges, is_transition=False):
     windowed = audio_data * np.hanning(len(audio_data))
     spectrum = np.abs(np.fft.rfft(windowed, n=FFT_SIZE))
     
-    # Check for silence in frequency domain
+    # Check for silence again (low, spread out energy in freq domain)
     silent, message = is_silent(audio_data, spectrum)
     if silent:
         return [], message
@@ -298,13 +300,13 @@ def enhanced_note_detection(audio_data, dictionary, edges, is_transition=False):
     # Normalize compressed spectrum
     compressed_normalized = normalize_vector(compressed)
     
-    # Use reduced dictionary with only feasible notes
+    # use reduced dictionary with only feasible notes
     D_reduced = dictionary[:, feasible_notes]
     
-    # Solve NNLS
+    # solve NNLS
     coefficients, _ = nnls(D_reduced, compressed_normalized)
     
-    # Apply threshold
+    # apply threshold
     coef_max = np.max(coefficients)
     if coef_max > 0:
         # Adaptive thresholding based on note position
@@ -321,7 +323,7 @@ def enhanced_note_detection(audio_data, dictionary, edges, is_transition=False):
             if coef < threshold_factor * coef_max:
                 coefficients[i] = 0
     
-    # Get note information for detected notes
+    # translate dictionary index to note hz
     note_freqs = np.array([note_to_hz(i + 21) for i in range(NUM_NOTES)])
     detected_notes = []
     
@@ -339,11 +341,10 @@ def enhanced_note_detection(audio_data, dictionary, edges, is_transition=False):
     
     return detected_notes, "Notes detected"
 
+# keep only stable notes or previously stable notes with high confidence
 def filter_by_stability(detected_notes):
-    """Filter notes based on stability tracking."""
+
     stable_midi_notes = track_note_stability(detected_notes)
-    
-    # Keep only stable notes or previously stable notes with high confidence
     filtered_notes = []
     for note_name, midi, freq, conf in detected_notes:
         if midi in stable_midi_notes or (midi in note_stability_counters and conf > 0.7):
@@ -368,7 +369,7 @@ def analysis_thread(dictionary, edges):
     time.sleep(BUFFER_SECONDS)
     
     last_analysis_time = time.time()
-    silence_message = "Awaiting audio..."
+    silence_message = "No sound detected"
     
     while is_running:
         current_time = time.time()
@@ -381,13 +382,13 @@ def analysis_thread(dictionary, edges):
                     continue  # Not enough data yet
                 buffer_copy = np.array(list(audio_buffer))
             
-            # Check for silence (quick check)
+            # Check for silence
             is_silent_now, _ = is_silent(buffer_copy)
             
             # Detect silence-to-sound transition
             is_transition = was_silent_before and not is_silent_now
             if is_transition:
-                print("⚡ Detected transition from silence to sound")
+                print("Detected transition from silence to sound")
             
             # Run note detection with silence checking
             detected, message = enhanced_note_detection(buffer_copy, dictionary, edges, is_transition)
@@ -485,14 +486,14 @@ def start_real_time_detection(dictionary):
     try:
         with stream:
             while True:
-                time.sleep(0.1)  # Keep main thread alive
+                time.sleep(0.1)
     except KeyboardInterrupt:
-        print("\nStopping...")
+        print("\nProgram stopped")
     finally:
         is_running = False
         if analysis_thread_handle.is_alive():
             analysis_thread_handle.join(timeout=1.0)
-        print("Real-time detection stopped")
+        print("Program stopped")
 
 def main():
     # Try to load the dictionary
