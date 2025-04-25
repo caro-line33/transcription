@@ -9,12 +9,12 @@ import mido
 dictionary = np.load("notes_matrix.npy")
 dict_norms = np.linalg.norm(dictionary, axis=1, keepdims=True)   # shape (N_notes,1)
 dictionary_unit = dictionary / (dict_norms + 1e-12) 
-PORT_NAME = 'loopMIDI Port 1'
+midi_out = mido.open_output('loopMIDI Port 1')
 
 sample_freq = 8400
 fft_length = 8400
 threshold = 1e-4
-blocksize = 1024
+blocksize = 600
 
 def process(input_signal):
     windowed = input_signal * np.hanning(len(input_signal))
@@ -66,6 +66,7 @@ def callback(indata, frames, time_info, status):
         callback._dec_count  = 0.0
         callback._previous_note_indices = []
         callback._current_note_indices = []
+        callback._note_booleans = np.zeros(61, dtype=float)
     
     # Get ring buffer and add current block to it
     buf = callback._buffer
@@ -89,8 +90,7 @@ def callback(indata, frames, time_info, status):
     if energy < threshold:
         print("no sound detected...")
         score = 0
-        for n in callback._previous_note_indices:
-            callback._previous_note_indices = []
+        callback._previous_note_indices = 0
     else:
         score, spectrum = tonality_score(buf)
     callback._ema = 0.88 * callback._ema + 0.12 * score
@@ -131,13 +131,21 @@ def callback(indata, frames, time_info, status):
 
         callback._current_note_indices = candidates
 
-        for note in candidates:
-            outport.send(mido.Message('note_on', note=idx_to_midi(note), velocity=48))
-            outport.send(mido.Message('note_off', note=idx_to_midi(note), velocity=48))
+        # Turn on any new candidate notes
+        for note_idx in candidates:
+            if not callback._note_booleans[note_idx]:
+                midi_out.send(mido.Message('note_on', note=idx_to_midi(note_idx), velocity=48)), print("note outputted to midi")
+                callback._note_booleans[note_idx] = 1
+
+        # Turn off any notes that were on last time but aren't still candidates
+        for idx, was_on in enumerate(callback._note_booleans):
+            if was_on and idx not in candidates:
+                midi_out.send(mido.Message('note_off', note=idx_to_midi(idx), velocity=48))
+                print("note off sent to midi")
+                callback._note_booleans[idx] = 0
 
         callback._previous_note_indices = callback._current_note_indices
 
-                
 
     print(f"delta ema: {delta:.2f}")
     print(f"dec count: {callback._dec_count:.2f}")
@@ -146,7 +154,6 @@ def callback(indata, frames, time_info, status):
         
 
 if __name__ == "__main__":
-    with mido.open_output(PORT_NAME) as outport:
         try:
             with sd.InputStream(channels=1, callback=callback, samplerate=sample_freq, blocksize=blocksize):
                 while True:
