@@ -3,9 +3,6 @@ import numpy as np
 # load the array from disk
 dictionary = np.load("notes_matrix.npy")
 
-# now `spectrum` is your 1-D NumPy array
-print(type(reference), reference.shape, reference.dtype)
-
 import sounddevice as sd
 import numpy as np
 import time
@@ -20,23 +17,22 @@ blocksize = 1024
 
 import numpy as np
 
-def top_n_frequencies(v, n=5, offset=26):
+def top_n_idx(v, n=5):
+    v = np.asarray(v)  
     # find the n largest indices
     idx = np.argpartition(v, -n)[-n:]
     # sort them descending by value
     idx = idx[np.argsort(v[idx])[::-1]]
     # add 26 to each index
-    return idx + offset
+    return idx
 
 
-def similarity_score(input_signal):
-    windowed    = input_signal * np.hanning(len(input_signal))
-    spectrum_all = np.abs(np.fft.rfft(windowed))[26:]
-    similarity = np.dot(spectrum_all, reference)
-    spec = spectrum_all / (np.sum(spectrum_all) + 1e-12)
-    ref  = reference   / (np.sum(reference)    + 1e-12)
-    cosine_similarity = float(np.dot(spec, ref))*1000
-    return spectrum_all, similarity, cosine_similarity
+def process(input_signal):
+    windowed = input_signal * np.hanning(len(input_signal))
+    fft_result = np.fft.rfft(windowed)
+    spectrum_full = abs(fft_result)
+    spectrum = spectrum_full[26:]
+    return spectrum
 
 def callback(indata, frames, time_info, status):
     if status:
@@ -68,12 +64,11 @@ def callback(indata, frames, time_info, status):
     callback._write_idx = end % fft_length
 
     os.system('cls' if os.name=='nt' else 'clear')
-    spectrum, similarity, cosine_similarity = similarity_score(buf)
-    print("similarity: ", similarity)
-    print("cosine similarity: ", cosine_similarity)
-    top_freqs = top_n_frequencies(spectrum)
-    print("top frequencies: ", top_freqs)
-
+    signal = process(buf)
+    scores = [np.dot(dictionary[i], signal) for i in range(60)]
+    candidates = top_n_idx(scores)
+    print(candidates)
+    
 if __name__ == "__main__":
     try:
         with sd.InputStream(channels=1, callback=callback, samplerate=sample_freq, blocksize=blocksize):
