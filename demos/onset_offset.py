@@ -11,17 +11,15 @@ threshold = 1e-4
 blocksize = 1024
 
 
-def spectral_crest(input_signal):
+def tonality_score(input_signal):
     fft_result = np.fft.rfft(input_signal)
-    spectrum = abs(fft_result)
+    spectrum_full = abs(fft_result)
+    spectrum = spectrum_full[26:]
     mean = np.average(spectrum)
     max_sq = np.max(spectrum)**2
     score = max_sq/mean
     return score, spectrum
 
-
-def fast_hps(input_spectrum):
-    
 
 def callback(indata, frames, time_info, status):
     if status:
@@ -35,6 +33,8 @@ def callback(indata, frames, time_info, status):
         callback._score_idx = 0
         callback._score_buffer = np.zeros(fft_length//3, dtype=float)
         callback._ema = 0.0
+        callback._prev_ema   = 0.0
+        callback._dec_count  = 0.0
     
     # Get ring buffer and add current block to it
     buf = callback._buffer
@@ -54,21 +54,30 @@ def callback(indata, frames, time_info, status):
     energy = np.sum(buf**2)
     os.system('cls' if os.name=='nt' else 'clear')
 
-    spectral_score, spectrum = spectral_crest(buf)
     # time domain silence blocking 
     if energy < threshold:
         print("no sound detected...")
         score = 0
     else:
-        score = spectral_score
-    callback._ema = 0.8 * callback._ema + 0.2 * score
+        score, spectrum = tonality_score(buf)
+    callback._ema = 0.88 * callback._ema + 0.12 * score
     print(f"tonality score: {score:.2f}, EMA: {callback._ema:.2f}")
 
-    if callback._ema >= 200:
-        
+    delta = callback._ema - callback._prev_ema 
+    if delta < -19:
+        callback._dec_count += 1
+    else:
+        callback._dec_count = 0
 
-        
+    if (callback._ema >= 250) and (callback._dec_count < 3):
+        print(f"i think there's music playing...")
+    
 
+    print(f"delta ema: {delta:.2f}")
+    print(f"dec count: {callback._dec_count:.2f}")
+    
+    callback._prev_ema = callback._ema
+        
 
 if __name__ == "__main__":
     try:
