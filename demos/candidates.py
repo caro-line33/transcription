@@ -1,3 +1,11 @@
+import numpy as np
+
+# load the array from disk
+dictionary = np.load("notes_matrix.npy")
+
+# now `spectrum` is your 1-D NumPy array
+print(type(reference), reference.shape, reference.dtype)
+
 import sounddevice as sd
 import numpy as np
 import time
@@ -10,17 +18,25 @@ fft_length = 8400
 threshold = 1e-4
 blocksize = 1024
 
+import numpy as np
 
-def tonality_score(input_signal):
-    fft_result = np.fft.rfft(input_signal)
-    spectrum_full = abs(fft_result)
-    spectrum = spectrum_full[26:]
-    mean = np.average(spectrum)
-    max_sq = np.max(spectrum)**2
-    score = max_sq/mean
-    return score, spectrum
+def top_n_frequencies(v, n=5, offset=26):
+    # find the n largest indices
+    idx = np.argpartition(v, -n)[-n:]
+    # sort them descending by value
+    idx = idx[np.argsort(v[idx])[::-1]]
+    # add 26 to each index
+    return idx + offset
 
 
+def similarity_score(input_signal):
+    windowed    = input_signal * np.hanning(len(input_signal))
+    spectrum_all = np.abs(np.fft.rfft(windowed))[26:]
+    similarity = np.dot(spectrum_all, reference)
+    spec = spectrum_all / (np.sum(spectrum_all) + 1e-12)
+    ref  = reference   / (np.sum(reference)    + 1e-12)
+    cosine_similarity = float(np.dot(spec, ref))*1000
+    return spectrum_all, similarity, cosine_similarity
 
 def callback(indata, frames, time_info, status):
     if status:
@@ -50,36 +66,13 @@ def callback(indata, frames, time_info, status):
         buf[idx:] = audio[:first]
         buf[:end-fft_length] = audio[first:]
     callback._write_idx = end % fft_length
-    
-    # compute energy over the whole buffer
-    energy = np.sum(buf**2)
+
     os.system('cls' if os.name=='nt' else 'clear')
-
-    # time domain silence blocking 
-    if energy < threshold:
-        print("no sound detected...")
-        score = 0
-    else:
-        score, spectrum = tonality_score(buf)
-    callback._ema = 0.88 * callback._ema + 0.12 * score
-    print(f"tonality score: {score:.2f}, EMA: {callback._ema:.2f}")
-
-    delta = callback._ema - callback._prev_ema 
-    if delta < -19:
-        callback._dec_count += 1
-    else:
-        callback._dec_count = 0
-
-    # ONLY IF IT PASSES ALL THE TESTS CAN WE DO PROCESSING...
-    if (callback._ema >= 250) and (callback._dec_count < 3):
-        print(f"i think there's music playing...")
-    
-
-    print(f"delta ema: {delta:.2f}")
-    print(f"dec count: {callback._dec_count:.2f}")
-    
-    callback._prev_ema = callback._ema
-        
+    spectrum, similarity, cosine_similarity = similarity_score(buf)
+    print("similarity: ", similarity)
+    print("cosine similarity: ", cosine_similarity)
+    top_freqs = top_n_frequencies(spectrum)
+    print("top frequencies: ", top_freqs)
 
 if __name__ == "__main__":
     try:
