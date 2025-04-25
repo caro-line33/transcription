@@ -62,8 +62,10 @@ def callback(indata, frames, time_info, status):
         callback._score_idx = 0
         callback._score_buffer = np.zeros(fft_length//3, dtype=float)
         callback._ema = 0.0
-        callback._prev_ema   = 0.0
-        callback._dec_count  = 0.0
+        callback._prev_ema = 0.0
+        callback._dec_count = 0.0
+        callback._current_note = None  # Currently playing note
+        callback._note_buffer = {}  # Track note consistency
     
     # Get ring buffer and add current block to it
     buf = callback._buffer
@@ -87,6 +89,12 @@ def callback(indata, frames, time_info, status):
     if energy < threshold:
         print("no sound detected...")
         score = 0
+        # Turn off any playing note when silence is detected
+        if callback._current_note is not None:
+            midi_out.send(mido.Message('note_off', note=idx_to_midi(callback._current_note), velocity=0))
+            print(f"NOTE OFF (silence): {note_names[callback._current_note]}")
+            callback._current_note = None
+            callback._note_buffer = {}  # Clear buffer on silence
     else:
         score, spectrum = tonality_score(buf)
     callback._ema = 0.88 * callback._ema + 0.12 * score
@@ -102,22 +110,41 @@ def callback(indata, frames, time_info, status):
     if (callback._ema >= 250) and (callback._dec_count < 3):
         print(f"i think there's music playing...")
         signal = process(buf)
-        scores = [np.dot(dictionary[i], signal) for i in range(60)]
 
         # compute all cosine similarities in one matrix‐vector multiply
         sig_norm = signal / (np.linalg.norm(signal) + 1e-12)
         cos_sims = dictionary_unit @ sig_norm
 
-        # pick top 5
+        # pick top note (just use n=1 for simplicity)
         candidates = top_n_idx(cos_sims, n=5)
-        print("Top matches (cosine):", [(c, note_names[c]) for c in candidates])
-
-        # NNLS solve using top 5- this part is generating an error due to dimension mismatch!
-        # b = signal
-        # A = np.vstack([dictionary[index] for index in candidates])
-        # x, residual = nnls(A, b)
-        # print("NNLS coefficients:", x)
+        top_note = candidates[0]  # Just get the best match
+        
+        print("Top match:", top_note, note_names[top_note])
+        
+        # Update note buffer with consistency tracking
+        if top_note in callback._note_buffer:
+            callback._note_buffer[top_note] += 1
+        else:
+            callback._note_buffer[top_note] = 1
             
+        # Clean up buffer - remove notes that aren't the current top note
+        keys_to_remove = [k for k in callback._note_buffer.keys() if k != top_note]
+        for k in keys_to_remove:
+            del callback._note_buffer[k]
+            
+        # If the same note has been detected for at least 2 callbacks, play it
+        if callback._note_buffer.get(top_note, 0) >= 2:
+            # If we have a new note to play
+            if callback._current_note != top_note:
+                # First turn off current note if one is playing
+                if callback._current_note is not None:
+                    midi_out.send(mido.Message('note_off', note=idx_to_midi(callback._current_note), velocity=0))
+                    print(f"NOTE OFF: {note_names[callback._current_note]}")
+                
+                # Now play the new note
+                midi_out.send(mido.Message('note_on', note=idx_to_midi(top_note), velocity=64))
+                print(f"NOTE ON: {note_names[top_note]} (MIDI: {idx_to_midi(top_note)})")
+                callback._current_note = top_note
 
     print(f"delta ema: {delta:.2f}")
     print(f"dec count: {callback._dec_count:.2f}")
